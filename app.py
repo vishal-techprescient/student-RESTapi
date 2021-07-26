@@ -1,5 +1,5 @@
-from flask import Flask
-from flask_restful import Resource, Api, reqparse, abort, fields, marshal_with
+from flask import Flask, request
+from flask_restx import Resource, Api, abort, fields, marshal_with
 from model import db,StudentModel
 
 app = Flask(__name__)
@@ -9,21 +9,26 @@ db.init_app(app)
 
 #db.create_all()
 
-stud_post_args = reqparse.RequestParser()
-stud_post_args.add_argument("name", type=str, help="Enter student name.", required=True)
-stud_post_args.add_argument("mail", type=str, help="Enter student mail id.", required=True)
-
-stud_put_args = reqparse.RequestParser()
-stud_put_args.add_argument("name", type=str)
-stud_put_args.add_argument("mail", type=str)
+model = api.model('Student Record', 
+				  {'name': fields.String(required = True, 
+    					  				 description="Name of the person", 
+    					  				 help="Name cannot be blank.")},
+                  {'mail': fields.String(required = True, 
+    					  				 description="Mail Id of the person", 
+    					  				 help="Mail Id cannot be blank.")}
+                )
 
 resource_fields = {
     'id' : fields.Integer,
     'name' : fields.String,
     'mail' : fields.String,
 }
+ns = api.namespace('students', description='Operations related to student record')
 
+@ns.route('')
 class Students_List(Resource):
+    
+    @api.doc(responses={ 200: 'OK', 400: 'Invalid Argument', 500: 'Mapping Key Error' })
     def get(self):
         student_data = StudentModel.query.all()
         students = {}
@@ -31,46 +36,53 @@ class Students_List(Resource):
             students[student.id] = {"name": student.name, "mail": student.mail}
         return students 
 
+@ns.route('/<int:stud_id>')
 class Student(Resource):
+
     @marshal_with(resource_fields)
+    @api.doc(responses={ 200: 'OK', 400: 'Invalid Argument', 500: 'Mapping Key Error' },
+                params={ 'stud_id': 'Specify the Id associated with the Student' })
     def get(self, stud_id):
         stud = StudentModel.query.filter_by(id=stud_id).first()
         if not stud:
             abort(404, message="No student found with this id")
         return stud
 
+    @api.doc(responses={ 200: 'OK', 400: 'Invalid Argument', 500: 'Mapping Key Error' }, 
+			 params={ 'stud_id': 'Specify the Id associated with the Student' })
+    @api.expect(model)
     @marshal_with(resource_fields)
-    def post(slef, stud_id):
-        args = stud_post_args.parse_args()
+    def post(self, stud_id):
         stud = StudentModel.query.filter_by(id=stud_id).first()
         if stud:
             abort(409, "Student ID already exist")
-
-        stud = StudentModel(id=stud_id, name=args['name'], mail=args['mail'])
+        stud = StudentModel(id=stud_id, name=request.json['name'], mail=request.json['mail'])
         db.session.add(stud)
         db.session.commit()
         return stud, 201
 
+    @api.doc(responses={ 200: 'OK', 400: 'Invalid Argument', 500: 'Mapping Key Error' }, 
+			 params={ 'stud_id': 'Specify the Id associated with the Student' })
+    @api.expect(model)
     @marshal_with(resource_fields)
     def put(self, stud_id):
-        args = stud_put_args.parse_args()
         stud = StudentModel.query.filter_by(id=stud_id).first()
         if not stud:
             abort(404, message="Student doesn't exist")
-        if args['name']:
-            stud.name = args['name']
-        if args['mail']:
-            stud.mail = args['mail']
+        if request.json['name']:
+            stud.name = request.json['name']
+        if request.json['mail']:
+            stud.mail = request.json['mail']
         db.session.commit()
         return stud
 
+    @api.doc(responses={ 200: 'OK', 400: 'Invalid Argument', 500: 'Mapping Key Error' }, 
+			 params={ 'stud_id': 'Specify the Id associated with the Student' })
     def delete(self, stud_id):
         StudentModel.query.filter_by(id=stud_id).delete()
         db.session.commit()
         return 'Student Deleted', 204
 
-api.add_resource(Student, '/students/<int:stud_id>')
-api.add_resource(Students_List, '/students')
 
 if __name__=='__main__':
     app.run(debug=True)
